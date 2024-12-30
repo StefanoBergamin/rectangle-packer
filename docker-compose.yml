@@ -1,0 +1,10 @@
+version: "3.8"
+services:
+  rectangle-packer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:5173"
+    volumes:
+      - ./:/app
