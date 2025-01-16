@@ -1,0 +1,1 @@
+import{b as s,u as t,w as n,V as o}from"./index-DSz3TiCM.js";const r={},u={class:"about"};function e(c,a){return t(),n("div",u,a[0]||(a[0]=[o("h1",null,"This is an about page",-1)]))}const l=s(r,[["render",e]]);export{l as default};
