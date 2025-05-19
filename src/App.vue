@@ -16,8 +16,15 @@
             <input
               v-model.number="mainHeight"
               type="number"
+              placeholder="Depth"
+              class="input-field"
+            />
+            <input
+              v-model.number="mainDepth"
+              type="number"
               placeholder="Height"
               class="input-field"
+              disabled
             />
           </div>
         </div>
@@ -35,14 +42,15 @@
               <input
                 v-model.number="rect.height"
                 type="number"
-                placeholder="Height"
+                placeholder="Depth"
                 class="input-field"
               />
               <input
                 v-model.number="rect.depth"
                 type="number"
-                placeholder="Depth"
+                placeholder="Height"
                 class="input-field"
+                @input="updateMainDepth"
               />
               <button
                 @click="removeSecondaryRectangle(index)"
@@ -85,19 +93,20 @@
                 />
               </div>
               <div class="flex items-center">
-                <label class="mr-2 text-sm">Y Rotation:</label>
+                <label class="mr-2 text-sm">Z Rotation:</label>
                 <input
                   type="range"
                   min="-180"
                   max="180"
-                  v-model.number="rotationY"
+                  v-model.number="rotationZ"
                   class="w-24"
                 />
               </div>
             </div>
           </div>
-          <div ref="resultContainer" class="overflow-auto">
+          <div ref="resultContainer" class="relative overflow-auto" :style="getResultContainerStyle()">
             <div
+              ref="rotatingElement"
               class="relative main-rectangle"
               :style="getMainRectangleStyle()"
             >
@@ -126,17 +135,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 
 const mainWidth = ref(120)
 const mainHeight = ref(80)
+const mainDepth = ref(null)
 const spaceZoom = ref(1)
 const secondaryRectangles = ref([{ width: '', height: '', depth: '' }])
 const packedRectangles = ref([])
 const resultContainer = ref(null)
 const is3DView = ref(false)
 const rotationX = ref(80)
-const rotationY = ref(0)
+const rotationZ = ref(0)
+const rotatingElement = ref(null)
 
 const addSecondaryRectangle = () => {
   secondaryRectangles.value.push({ width: '', height: '', depth: '' })
@@ -144,21 +155,39 @@ const addSecondaryRectangle = () => {
 
 const removeSecondaryRectangle = (index) => {
   secondaryRectangles.value.splice(index, 1)
+  updateMainDepth()
 }
 
 const toggleView = () => {
   is3DView.value = !is3DView.value
 }
 
+const updateMainDepth = () => {
+  // Find the highest depth value among secondary rectangles
+  const depths = secondaryRectangles.value
+    .map(rect => rect.depth)
+    .filter(depth => typeof depth === 'number' && !isNaN(depth))
+
+  if (depths.length > 0) {
+    mainDepth.value = Math.max(...depths)
+  } else {
+    mainDepth.value = 0
+  }
+}
+
+// Watch for changes in the secondaryRectangles array
+watch(secondaryRectangles, () => {
+  updateMainDepth()
+}, { deep: true })
 const startPackingProcess = async () => {
-  const mainRect = { width: mainWidth.value, height: mainHeight.value }
+  const mainRect = { width: mainWidth.value, height: mainHeight.value, depth: mainDepth.value }
   const rects = secondaryRectangles.value
     .filter((r) => r.width && r.height)
     .map((r, id) => ({
       id,
       width: r.width,
       height: r.height,
-      depth: Math.min(r.depth || 20, 40), // Default depth if not specified, cap at 40 to avoid extending too far
+      depth: r.depth ?? 20, //Math.min(r.depth || 20, 40), // Default depth if not specified, cap at 40 to avoid extending too far
       area: r.width * r.height
     }))
 
@@ -301,6 +330,14 @@ const calculateZoom = () => {
   }
 }
 
+const getResultContainerStyle = () => {
+  const style = {
+    height: `${Math.max(mainHeight.value, mainDepth.value) * 2 * spaceZoom.value}px`,
+  }
+
+  return style
+}
+
 const getMainRectangleStyle = () => {
   const style = {
     width: `${mainWidth.value * spaceZoom.value}px`,
@@ -308,7 +345,9 @@ const getMainRectangleStyle = () => {
   }
 
   if (is3DView.value) {
-    style.transform = `perspective(2000px) rotateX(${rotationX.value}deg) rotateY(${rotationY.value}deg)`
+    style.position = 'absolute'
+    style.bottom = 0
+    style.transform = `perspective(2000px) rotateX(${rotationX.value}deg) rotateZ(${rotationZ.value}deg)`
     style.transformStyle = 'preserve-3d'
     style.transformOrigin = 'center center'
   }
@@ -361,6 +400,7 @@ const adjustColor = (color, amount) => {
 
 onMounted(() => {
   window.addEventListener('resize', calculateZoom)
+  updateMainDepth()
 })
 </script>
 
