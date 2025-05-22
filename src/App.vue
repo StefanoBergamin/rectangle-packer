@@ -16,8 +16,15 @@
             <input
               v-model.number="mainHeight"
               type="number"
+              placeholder="Depth"
+              class="input-field"
+            />
+            <input
+              v-model.number="mainDepth"
+              type="number"
               placeholder="Height"
               class="input-field"
+              disabled
             />
           </div>
         </div>
@@ -35,8 +42,15 @@
               <input
                 v-model.number="rect.height"
                 type="number"
+                placeholder="Depth"
+                class="input-field"
+              />
+              <input
+                v-model.number="rect.depth"
+                type="number"
                 placeholder="Height"
                 class="input-field"
+                @input="updateMainDepth"
               />
               <button
                 @click="removeSecondaryRectangle(index)"
@@ -62,27 +76,58 @@
         </button>
 
         <div v-if="packedRectangles.length > 0" class="mt-6">
-          <h2 class="text-xl font-semibold mb-2">Result</h2>
-          <div ref="resultContainer" class="overflow-auto">
+          <div class="flex justify-between gap-1">
+            <h2 class="text-xl font-semibold mb-2">Result</h2>
+            <div>
+              <button @click="toggleView" class="px-4 py-1 bg-gray-200 rounded">
+                {{ is3DView ? 'Switch to 2D View' : 'Switch to 3D View' }}
+              </button>
+            </div>
+          </div>
+          <div class="flex space-x-4 mb-2">
+            <div v-if="is3DView" class="flex items-center gap-2 mt-1">
+              <div class="flex items-center">
+                <label class="mr-2 text-sm text-nowrap">X Rotation:</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="90"
+                  v-model.number="rotationX"
+                />
+              </div>
+              <div class="flex items-center">
+                <label class="mr-2 text-sm text-nowrap">Z Rotation:</label>
+                <input
+                  type="range"
+                  min="-180"
+                  max="180"
+                  v-model.number="rotationZ"
+                />
+              </div>
+            </div>
+          </div>
+          <div ref="resultContainer" class="relative" :style="getResultContainerStyle()">
             <div
+              ref="rotatingElement"
               class="relative main-rectangle"
-              :style="{
-                width: `${mainWidth * spaceZoom}px`,
-                height: `${mainHeight * spaceZoom}px`,
-              }"
+              :style="getMainRectangleStyle()"
             >
               <div
                 v-for="(rect, index) in packedRectangles"
                 :key="index"
-                class="absolute"
-                :style="{
-                  left: `${rect.x * spaceZoom}px`,
-                  top: `${rect.y * spaceZoom}px`,
-                  width: `${rect.width * spaceZoom}px`,
-                  height: `${rect.height * spaceZoom}px`,
-                  backgroundColor: getRandomColor(index),
-                }"
-              ></div>
+                class="absolute rectangle-container"
+                :style="getBoxContainerStyle(rect)"
+              >
+                <div v-if="!is3DView" class="rectangle-2d" :style="{ backgroundColor: getRandomColor(index) }"></div>
+                <div v-else class="cube" :style="getBoxStyle(rect, index)">
+                  <div class="cube-face cube-face-front"></div>
+                  <div class="cube-face cube-face-back"></div>
+                  <div class="cube-face cube-face-right"></div>
+                  <div class="cube-face cube-face-left"></div>
+                  <div class="cube-face cube-face-top"></div>
+                  <div class="cube-face cube-face-bottom"></div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -92,28 +137,62 @@
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, onMounted, nextTick, watch } from 'vue'
 
 const mainWidth = ref(120)
 const mainHeight = ref(80)
+const mainDepth = ref(null)
 const spaceZoom = ref(1)
-const secondaryRectangles = ref([{ width: '', height: '' }])
+const secondaryRectangles = ref([{ width: '', height: '', depth: '' }])
 const packedRectangles = ref([])
 const resultContainer = ref(null)
+const is3DView = ref(false)
+const rotationX = ref(80)
+const rotationZ = ref(0)
+const rotatingElement = ref(null)
 
 const addSecondaryRectangle = () => {
-  secondaryRectangles.value.push({ width: '', height: '' })
+  secondaryRectangles.value.push({ width: '', height: '', depth: '' })
 }
 
 const removeSecondaryRectangle = (index) => {
   secondaryRectangles.value.splice(index, 1)
+  updateMainDepth()
 }
 
+const toggleView = () => {
+  is3DView.value = !is3DView.value
+}
+
+const updateMainDepth = () => {
+  // Find the highest depth value among secondary rectangles
+  const depths = secondaryRectangles.value
+    .map(rect => rect.depth)
+    .filter(depth => typeof depth === 'number' && !isNaN(depth))
+
+  if (depths.length > 0) {
+    mainDepth.value = Math.max(...depths)
+  } else {
+    mainDepth.value = 0
+  }
+}
+
+// Watch for changes in the secondaryRectangles array
+watch(secondaryRectangles, () => {
+  updateMainDepth()
+}, { deep: true })
+
 const startPackingProcess = async () => {
-  const mainRect = { width: mainWidth.value, height: mainHeight.value }
+  const mainRect = { width: mainWidth.value, height: mainHeight.value, depth: mainDepth.value }
   const rects = secondaryRectangles.value
     .filter((r) => r.width && r.height)
-    .map((r, id) => ({ id, width: r.width, height: r.height, area: r.width * r.height }))
+    .map((r, id) => ({
+      id,
+      width: r.width,
+      height: r.height,
+      depth: r.depth ?? 20, //Math.min(r.depth || 20, 40), // Default depth if not specified, cap at 40 to avoid extending too far
+      area: r.width * r.height
+    }))
 
   const packed = improvedPackingAlgorithm(mainRect, rects)
   packedRectangles.value = packed
@@ -250,12 +329,81 @@ const calculateZoom = () => {
   if (resultContainer.value) {
     const containerWidth = resultContainer.value.offsetWidth
     const contentWidth = mainWidth.value
-    spaceZoom.value = containerWidth / contentWidth
+    spaceZoom.value = Math.min(5, containerWidth / contentWidth)
   }
+}
+
+const getResultContainerStyle = () => {
+  const style = {
+    height: `${Math.max(mainHeight.value, mainDepth.value) * 2 * spaceZoom.value}px`,
+  }
+
+  return style
+}
+
+const getMainRectangleStyle = () => {
+  const style = {
+    width: `${mainWidth.value * spaceZoom.value}px`,
+    height: `${mainHeight.value * spaceZoom.value}px`,
+  }
+
+  if (is3DView.value) {
+    style.position = 'absolute'
+    style.bottom = 0
+    style.transform = `perspective(2000px) rotateX(${rotationX.value}deg) rotateZ(${rotationZ.value}deg)`
+    style.transformStyle = 'preserve-3d'
+    style.transformOrigin = 'center center'
+  }
+
+  return style
+}
+
+const getBoxContainerStyle = (rect) => {
+  return {
+    left: `${rect.x * spaceZoom.value}px`,
+    top: `${rect.y * spaceZoom.value}px`,
+    width: `${rect.width * spaceZoom.value}px`,
+    height: `${rect.height * spaceZoom.value}px`,
+  }
+}
+
+const getBoxStyle = (rect, index) => {
+  const baseColor = getRandomColor(index)
+
+  return {
+    '--cube-color-front': adjustColor(baseColor, -10),
+    '--cube-color-back': adjustColor(baseColor, -30),
+    '--cube-color-right': adjustColor(baseColor, -20),
+    '--cube-color-left': adjustColor(baseColor, -40),
+    '--cube-color-top': baseColor,
+    '--cube-color-bottom': adjustColor(baseColor, -50),
+    '--cube-width': `${rect.width * spaceZoom.value}px`,
+    '--cube-height': `${rect.height * spaceZoom.value}px`,
+    '--cube-depth': `${rect.depth * spaceZoom.value}px`,
+  }
+}
+
+// Function to adjust color brightness
+const adjustColor = (color, amount) => {
+  const clamp = (val) => Math.min(255, Math.max(0, val))
+
+  // Convert hex to RGB
+  let r = parseInt(color.slice(1, 3), 16)
+  let g = parseInt(color.slice(3, 5), 16)
+  let b = parseInt(color.slice(5, 7), 16)
+
+  // Adjust brightness
+  r = clamp(r + amount)
+  g = clamp(g + amount)
+  b = clamp(b + amount)
+
+  // Convert back to hex
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`
 }
 
 onMounted(() => {
   window.addEventListener('resize', calculateZoom)
+  updateMainDepth()
 })
 </script>
 
@@ -263,6 +411,9 @@ onMounted(() => {
 .input-field {
   @apply block w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm shadow-sm placeholder-gray-400
   focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500;
+}
+.input-field:disabled {
+  @apply bg-gray-100 border border-gray-200 text-gray-500 cursor-not-allowed
 }
 
 .main-rectangle {
@@ -277,5 +428,90 @@ onMounted(() => {
     #fff
   );
   background-size: 30px 30px;
+  position: relative;
+  border: 1px solid #ccc;
+  margin: 20px 0;
+  transition: transform 0.5s ease;
+}
+
+.rectangle-container {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+
+.rectangle-2d {
+  width: 100%;
+  height: 100%;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+.cube {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  transform: translateZ(0);
+}
+
+.cube-face {
+  position: absolute;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+}
+
+/* Top face */
+.cube-face-top {
+  width: var(--cube-width);
+  height: var(--cube-height);
+  background-color: var(--cube-color-top);
+  transform: translateZ(var(--cube-depth));
+}
+
+/* Bottom face */
+.cube-face-bottom {
+  width: var(--cube-width);
+  height: var(--cube-height);
+  background-color: var(--cube-color-bottom);
+  transform: translateZ(0);
+}
+
+/* Front face */
+.cube-face-front {
+  width: var(--cube-width);
+  height: var(--cube-depth);
+  background-color: var(--cube-color-front);
+  transform: rotateX(-90deg);
+  transform-origin: bottom;
+  bottom: 0;
+}
+
+/* Back face */
+.cube-face-back {
+  width: var(--cube-width);
+  height: var(--cube-depth);
+  background-color: var(--cube-color-back);
+  transform: rotateX(90deg);
+  transform-origin: top;
+  top: 0;
+}
+
+/* Right face */
+.cube-face-right {
+  width: var(--cube-depth);
+  height: var(--cube-height);
+  background-color: var(--cube-color-right);
+  transform: rotateY(-90deg);
+  transform-origin: left;
+  left: 100%;
+}
+
+/* Left face */
+.cube-face-left {
+  width: var(--cube-depth);
+  height: var(--cube-height);
+  background-color: var(--cube-color-left);
+  transform: rotateY(90deg);
+  transform-origin: right;
+  right: 100%;
 }
 </style>
+
