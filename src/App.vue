@@ -76,35 +76,37 @@
         </button>
 
         <div v-if="packedRectangles.length > 0" class="mt-6">
-          <h2 class="text-xl font-semibold mb-2">Result</h2>
+          <div class="flex justify-between gap-1">
+            <h2 class="text-xl font-semibold mb-2">Result</h2>
+            <div>
+              <button @click="toggleView" class="px-4 py-1 bg-gray-200 rounded">
+                {{ is3DView ? 'Switch to 2D View' : 'Switch to 3D View' }}
+              </button>
+            </div>
+          </div>
           <div class="flex space-x-4 mb-2">
-            <button @click="toggleView" class="px-4 py-1 bg-gray-200 rounded">
-              {{ is3DView ? 'Switch to 2D View' : 'Switch to 3D View' }}
-            </button>
-            <div v-if="is3DView" class="flex items-center space-x-4">
+            <div v-if="is3DView" class="flex items-center gap-2 mt-1">
               <div class="flex items-center">
-                <label class="mr-2 text-sm">X Rotation:</label>
+                <label class="mr-2 text-sm text-nowrap">X Rotation:</label>
                 <input
                   type="range"
                   min="0"
                   max="90"
                   v-model.number="rotationX"
-                  class="w-24"
                 />
               </div>
               <div class="flex items-center">
-                <label class="mr-2 text-sm">Z Rotation:</label>
+                <label class="mr-2 text-sm text-nowrap">Z Rotation:</label>
                 <input
                   type="range"
                   min="-180"
                   max="180"
                   v-model.number="rotationZ"
-                  class="w-24"
                 />
               </div>
             </div>
           </div>
-          <div ref="resultContainer" class="relative overflow-auto" :style="getResultContainerStyle()">
+          <div ref="resultContainer" class="relative" :style="getResultContainerStyle()">
             <div
               ref="rotatingElement"
               class="relative main-rectangle"
@@ -179,6 +181,7 @@ const updateMainDepth = () => {
 watch(secondaryRectangles, () => {
   updateMainDepth()
 }, { deep: true })
+
 const startPackingProcess = async () => {
   const mainRect = { width: mainWidth.value, height: mainHeight.value, depth: mainDepth.value }
   const rects = secondaryRectangles.value
@@ -408,6 +411,9 @@ onMounted(() => {
 .input-field {
   @apply block w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm shadow-sm placeholder-gray-400
   focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500;
+}
+.input-field:disabled {
+  @apply bg-gray-100 border border-gray-200 text-gray-500 cursor-not-allowed
 }
 
 .main-rectangle {
