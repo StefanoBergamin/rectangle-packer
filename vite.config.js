@@ -19,4 +19,5 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url))
     },
   },
+  base: '/rectangle-packer/', // This is the equivalent of publicPath in vue.config.js
 })

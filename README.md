@@ -39,3 +39,13 @@ npm run test:unit
 ```sh
 npm run lint
 ```
+
+## GitHub Pages
+
+### Push to gh-pages
+```sh
+npm run build
+git add -f dist
+git commit -m "Add dist for deploy"
+git subtree push --prefix dist origin gh-pages
+```
