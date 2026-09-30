@@ -4,7 +4,7 @@
         <div class="mt-1 grid gap-1">
             <div
                 v-for="(rect, index) in secondaryRectangles" 
-                :key="index"
+                :key="rect.id"
             >
                 <UserPackage
                     v-model:rect="secondaryRectangles[index]"
@@ -29,10 +29,17 @@ import UserPackage from './UserPackage.vue';
 
 const emit = defineEmits(['update:maxHeight', 'update:userPackages']);
 
-const secondaryRectangles = ref([{ width: '', depth: '', height: '' }]);
+const createSecondaryRectangle = () => ({
+  id: crypto.randomUUID(),
+  width: '',
+  depth: '',
+  height: '',
+});
+
+const secondaryRectangles = ref([createSecondaryRectangle()]);
 
 const addSecondaryRectangle = () => {
-  secondaryRectangles.value.push({ width: '', depth: '', height: '' });
+  secondaryRectangles.value.push(createSecondaryRectangle());
 }
 
 const removeSecondaryRectangle = (index) => {

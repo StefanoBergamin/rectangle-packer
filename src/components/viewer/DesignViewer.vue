@@ -19,18 +19,15 @@
 
         <!-- Design Component -->
         <div ref="resultContainer" class="relative" :style="getResultContainerStyle()">
-            <div
-                class="relative main-rectangle"
-                :style="getMainRectangleStyle()"
-            >
+            <div class="relative main-rectangle" :style="getMainRectangleStyle()">
                 <div
-                    v-for="(rect, index) in packedRectangles"
-                    :key="index"
+                    v-for="rect in packedRectangles"
+                    :key="rect.id"
                     class="absolute rectangle-container"
                     :style="getBoxContainerStyle(rect)"
                 >
-                    <CubeObject v-if="is3DView" :style="getBoxStyle(rect, index)" />
-                    <SquareObject v-else :style="{ backgroundColor: getRandomColor(index) }" />
+                    <CubeObject v-if="is3DView" :style="getBoxStyle(rect)" />
+                    <SquareObject v-else :style="{ backgroundColor: getRandomColor(rect.id) }" />
                 </div>
             </div>
         </div>
@@ -38,7 +35,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted } from 'vue';
+import { ref, nextTick, onMounted, onUnmounted } from 'vue';
 import ControlPanel3D from './ControlPanel3D.vue';
 import SquareObject from './SquareObject.vue';
 import CubeObject from './CubeObject.vue';
@@ -49,12 +46,14 @@ const props = defineProps({
         required: true
     },
     userPackages: {
-        type: Object,
+        type: Array,
+        default: [],
         required: true
     }
 });
 
 const packedRectangles = ref([]);
+const unpackedRectangles = ref([]);
 const is3DView = ref(false);
 const spaceZoom = ref(1);
 const resultContainer = ref(null);
@@ -68,19 +67,42 @@ const toggleView = () => {
 }
 
 const startPackingProcess = async () => {
-    const mainRect = { ...props.baseArea };
+    const baseWidth = toPositiveFiniteNumber(props.baseArea.width);
+    const baseDepth = toPositiveFiniteNumber(props.baseArea.depth);
+    const baseHeight = toPositiveFiniteNumber(props.baseArea.height) ?? 0;
+
+    if (baseWidth === null || baseDepth === null) {
+        packedRectangles.value = [];
+        return;
+    }
+
+    const mainRect = {
+        width: baseWidth,
+        depth: baseDepth,
+        height: baseHeight,
+    };
 
     const rects = props.userPackages
-        .filter((r) => r.width && r.depth)
-        .map((r, id) => ({
-            id,
-            width: r.width,
-            depth: r.depth,
-            height: r.height || 20, // Set default height if not specified
-            area: r.width * r.depth
-        }));
+        .map((rect) => {
+            const width = toPositiveFiniteNumber(rect.width);
+            const depth = toPositiveFiniteNumber(rect.depth);
+            const height = toPositiveFiniteNumber(rect.height) ?? 20; // Set default height if not specified
 
-    const packed = improvedPackingAlgorithm(mainRect, rects);
+            if (width === null || depth === null) {
+                return null;
+            }
+
+            return {
+                id: rect.id,
+                width,
+                depth,
+                height,
+                area: width * depth,
+            };
+        })
+        .filter(Boolean);
+
+    const packed = tryPackingCombination(mainRect, rects);
     packedRectangles.value = packed;
 
     await nextTick();
@@ -91,116 +113,118 @@ defineExpose({
     startPackingProcess
 });
 
-
-const improvedPackingAlgorithm = (mainRect, rects) => {
-  let bestPacking = null
-  let maxPackedCount = 0
-
-  // Generate all possible orientation combinations
-  const orientationCombinations = generateOrientationCombinations(rects.length)
-
-  for (const combination of orientationCombinations) {
-    const orientedRects = rects.map((rect, index) => ({
-      ...rect,
-      width: combination[index] ? rect.depth : rect.width,
-      depth: combination[index] ? rect.width : rect.depth,
-    }));
-
-    const result = tryPackingCombination(mainRect, orientedRects);
-
-    if (result.length > maxPackedCount) {
-      maxPackedCount = result.length;
-      bestPacking = result;
-    }
-
-    if (maxPackedCount === rects.length) break; // All rectangles packed, no need to continue
+const toPositiveFiniteNumber = (value) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+    return null;
   }
 
-  return bestPacking || [];
-}
-
-const generateOrientationCombinations = (count) => {
-  const combinations = [];
-  const max = Math.pow(2, count);
-
-  for (let i = 0; i < max; i++) {
-    combinations.push(
-      i
-        .toString(2)
-        .padStart(count, '0')
-        .split('')
-        .map((x) => x === '1'),
-    );
-  }
-
-  return combinations;
+  return value;
 }
 
 const tryPackingCombination = (mainRect, rects) => {
-  const packed = []
-  const spaces = [{ x: 0, y: 0, width: mainRect.width, depth: mainRect.depth }]
+  const packed = [];
+  const spaces = [
+    {
+      x: 0,
+      y: 0,
+      width: mainRect.width,
+      depth: mainRect.depth,
+    },
+  ];
 
-  rects.sort((a, b) => b.area - a.area)
+  const sortedRects = [...rects].sort((a, b) => b.area - a.area);
 
-  for (const rect of rects) {
+  for (const rect of sortedRects) {
     let bestFit = null;
     let bestSpace = null;
 
-    for (const space of spaces) {
-      if (rect.width <= space.width && rect.depth <= space.depth) {
-        const remainingArea =
-          (space.width - rect.width) * space.depth + (space.depth - rect.depth) * rect.width;
+    const orientations = [
+      { width: rect.width, depth: rect.depth },
+      { width: rect.depth, depth: rect.width },
+    ];
 
-        if (!bestFit || remainingArea < bestFit.remainingArea) {
-          bestFit = {
-            ...rect,
-            x: space.x,
-            y: space.y,
-            remainingArea,
-          };
+    for (const space of spaces) {
+      for (const orientation of orientations) {
+        const { width, depth } = orientation;
+
+        if (width > space.width || depth > space.depth) {
+          continue;
+        }
+
+        const remainingArea = space.width * space.depth - width * depth;
+        const shortSideResidual = Math.min(
+          space.width - width,
+          space.depth - depth,
+        );
+
+        const candidate = {
+          ...rect,
+          width,
+          depth,
+          x: space.x,
+          y: space.y,
+          remainingArea,
+          shortSideResidual,
+        };
+
+        const isBetterFit =
+          !bestFit ||
+          candidate.remainingArea < bestFit.remainingArea ||
+          (
+            candidate.remainingArea === bestFit.remainingArea &&
+            candidate.shortSideResidual < bestFit.shortSideResidual
+          );
+
+        if (isBetterFit) {
+          bestFit = candidate;
           bestSpace = space;
         }
       }
     }
 
-    if (bestFit) {
-      packed.push(bestFit);
-
-      // Update available spaces
-      const newSpaces = [];
-      for (const space of spaces) {
-        if (space === bestSpace) {
-          if (space.width - bestFit.width > 0) {
-            newSpaces.push({
-              x: space.x + bestFit.width,
-              y: space.y,
-              width: space.width - bestFit.width,
-              depth: bestFit.depth,
-            });
-          }
-          if (space.depth - bestFit.depth > 0) {
-            newSpaces.push({
-              x: space.x,
-              y: space.y + bestFit.depth,
-              width: space.width,
-              depth: space.depth - bestFit.depth,
-            });
-          }
-        } else {
-          newSpaces.push(space);
-        }
-      }
-      spaces.length = 0;
-      spaces.push(...newSpaces);
-    } else {
-      break; // If we can't pack a rectangle, stop trying with this combination
+    // If we can't pack a rectangle, continue with the others
+    if (!bestFit) {
+        unpackedRectangles.value.push(rect);
+        continue;
     }
+
+    packed.push(bestFit);
+
+    const newSpaces = [];
+
+    for (const space of spaces) {
+      if (space !== bestSpace) {
+        newSpaces.push(space);
+        continue;
+      }
+
+      if (space.width - bestFit.width > 0) {
+        newSpaces.push({
+          x: space.x + bestFit.width,
+          y: space.y,
+          width: space.width - bestFit.width,
+          depth: bestFit.depth,
+        });
+      }
+
+      if (space.depth - bestFit.depth > 0) {
+        newSpaces.push({
+          x: space.x,
+          y: space.y + bestFit.depth,
+          width: space.width,
+          depth: space.depth - bestFit.depth,
+        });
+      }
+    }
+
+    spaces.length = 0;
+    spaces.push(...newSpaces);
   }
 
   return packed;
-}
+};
 
-const getRandomColor = (index) => {
+const getRandomColor = (id) => {
   const colors = [
     '#FF6B6B', // Bright red
     '#4ECDC4', // Light turquoise
@@ -213,7 +237,11 @@ const getRandomColor = (index) => {
     '#3F51B5', // Dark blue
     '#DCE775', // Light lime green
   ];
-  return colors[index % colors.length];
+
+  const hash = [...String(id)]
+    .reduce((value, char) => value + char.charCodeAt(0), 0);
+
+  return colors[hash % colors.length];
 }
 
 const calculateZoom = () => {
@@ -225,8 +253,9 @@ const calculateZoom = () => {
 }
 
 const getResultContainerStyle = () => {
+  const height = is3DView ? props.baseArea.height : props.baseArea.depth;
   const style = {
-    height: `${Math.max(props.baseArea.depth, props.baseArea.height) * 2 * spaceZoom.value}px`,
+    height: `${(height + 75) * spaceZoom.value}px`,
   };
 
   return style;
@@ -258,8 +287,8 @@ const getBoxContainerStyle = (rect) => {
   }
 }
 
-const getBoxStyle = (rect, index) => {
-  const baseColor = getRandomColor(index)
+const getBoxStyle = (rect) => {
+  const baseColor = getRandomColor(rect.id)
 
   return {
     '--cube-color-front': adjustColor(baseColor, -10),
@@ -294,7 +323,11 @@ const adjustColor = (color, amount) => {
 
 onMounted(() => {
   window.addEventListener('resize', calculateZoom);
-})
+});
+
+onUnmounted(() => {
+  window.removeEventListener('resize', calculateZoom);
+});
 </script>
 
 <style scoped>

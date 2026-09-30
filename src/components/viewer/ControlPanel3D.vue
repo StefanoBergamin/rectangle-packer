@@ -1,15 +1,15 @@
 <template>
-    <div class="flex items-center gap-2 mt-1">
-        <div class="flex items-center">
-            <BaseLabel label="X Rotation:" />
+    <div class="grid grid-cols-2 gap-2 mt-1 w-full">
+        <div class="flex flex-col items-center">
+            <BaseLabel label="X Rotation" />
             <BaseRange
                 :min="0"
                 :max="90"
                 v-model="modelValue.rotationX"
             />
         </div>
-        <div class="flex items-center">
-            <BaseLabel label="Z Rotation:" />
+        <div class="flex flex-col items-center">
+            <BaseLabel label="Z Rotation" />
             <BaseRange
                 :min="-180"
                 :max="180"

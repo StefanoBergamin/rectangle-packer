@@ -1,8 +1,10 @@
 <template>
-  <div class="min-h-screen bg-gray-100 py-6 flex flex-col justify-center sm:py-12">
-    <div class="relative py-3 sm:max-w-xl sm:mx-auto">
+  <div class="min-h-screen bg-gray-100 flex flex-col justify-center sm:py-12">
+    <div class="relative sm:max-w-xl sm:mx-auto">
       <div class="relative px-4 py-10 bg-white shadow-lg sm:rounded-3xl sm:p-20">
-        <h1 class="text-2xl font-semibold mb-6 text-center">Rectangle Packer</h1>
+        <h1 class="text-2xl font-semibold mb-6 text-center">
+          Rectangle Packer
+        </h1>
 
         <SurfaceRectangle 
           class="mb-6" 
@@ -39,7 +41,7 @@ import SurfaceRectangle from './components/settings/SurfaceRectangle.vue';
 import UserPackages from './components/settings/UserPackages.vue';
 import DesignViewer from './components/viewer/DesignViewer.vue';
 
-const userPackages = ref({});
+const userPackages = ref([]);
 const maxRectangleHeight = ref(0);
 const designViewer = ref(null);
 
