@@ -13,13 +13,30 @@
             </div>
         </div>
 
-        <div class="flex space-x-4 mb-2">
+        <div class="hidden sm:flex space-x-4 mb-2">
             <ControlPanel3D v-if="is3DView" v-model="rotations" />
         </div>
 
         <!-- Design Component -->
-        <div ref="resultContainer" class="relative" :style="getResultContainerStyle()">
-            <div class="relative main-rectangle" :style="getMainRectangleStyle()">
+        <div
+          ref="resultContainer" 
+          class="relative viewer-container flex justify-center" 
+          :class="{
+            'is-3d-view': is3DView,
+            'is-dragging': isDragging,
+          }"
+          :style="getResultContainerStyle()"
+          @pointerdown="startDrag"
+          @pointermove="drag"
+          @pointerup="stopDrag"
+          @pointercancel="stopDrag"
+          @lostpointercapture="stopDrag"
+        >
+            <div
+              class="relative main-rectangle"
+              :class="{ 'is-dragging': isDragging }" 
+              :style="getMainRectangleStyle()"
+            >
                 <div
                     v-for="rect in packedRectangles"
                     :key="rect.id"
@@ -57,13 +74,17 @@ const unpackedRectangles = ref([]);
 const is3DView = ref(false);
 const spaceZoom = ref(1);
 const resultContainer = ref(null);
+const threeDZoomFactor = 0.65;
 const rotations = ref({
     rotationX: 80,
     rotationZ: 0
 });
 
-const toggleView = () => {
+const toggleView = async () => {
   is3DView.value = !is3DView.value;
+
+  await nextTick();
+  calculateZoom();
 }
 
 const startPackingProcess = async () => {
@@ -245,11 +266,17 @@ const getRandomColor = (id) => {
 }
 
 const calculateZoom = () => {
-  if (resultContainer.value) {
-    const containerWidth = resultContainer.value.offsetWidth;
-    const contentWidth = props.baseArea.width;
-    spaceZoom.value = Math.min(5, containerWidth / contentWidth);
+  if (!resultContainer.value) {
+    return;
   }
+
+  const containerWidth = resultContainer.value.offsetWidth;
+  const contentWidth = props.baseArea.width;
+  const baseZoom = Math.min(5, containerWidth / contentWidth);
+
+  spaceZoom.value = is3DView.value
+    ? baseZoom * threeDZoomFactor
+    : baseZoom;
 }
 
 const getResultContainerStyle = () => {
@@ -321,6 +348,81 @@ const adjustColor = (color, amount) => {
   return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
+
+// MOUSE ROTATION ------------------------------------------
+
+const isDragging = ref(false);
+
+const dragStart = ref({
+  x: 0,
+  y: 0,
+  rotationX: 0,
+  rotationZ: 0,
+});
+
+const clamp = (value, min, max) => {
+  return Math.min(max, Math.max(min, value));
+};
+
+const normalizeAngle = (angle) => {
+  return ((angle + 180) % 360 + 360) % 360 - 180;
+};
+
+const startDrag = (event) => {
+  if (!is3DView.value || !event.isPrimary) {
+    return;
+  }
+
+  // It only accepts the left mouse button
+  if (event.pointerType === 'mouse' && event.button !== 0) {
+    return;
+  }
+
+  isDragging.value = true;
+
+  dragStart.value = {
+    x: event.clientX,
+    y: event.clientY,
+    rotationX: rotations.value.rotationX,
+    rotationZ: rotations.value.rotationZ,
+  };
+
+  event.currentTarget.setPointerCapture(event.pointerId);
+};
+
+const drag = (event) => {
+  if (!isDragging.value || !event.isPrimary) {
+    return;
+  }
+
+  const deltaX = event.clientX - dragStart.value.x;
+  const deltaY = event.clientY - dragStart.value.y;
+
+  rotations.value.rotationZ = normalizeAngle(
+    dragStart.value.rotationZ + deltaX * 0.4,
+  );
+
+  rotations.value.rotationX = clamp(
+    dragStart.value.rotationX - deltaY * 0.3,
+    20,
+    85,
+  );
+};
+
+const stopDrag = (event) => {
+  if (!isDragging.value) {
+    return;
+  }
+
+  isDragging.value = false;
+
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+    event.currentTarget.releasePointerCapture(event.pointerId);
+  }
+};
+
+// ---------------------------------------------------------
+
 onMounted(() => {
   window.addEventListener('resize', calculateZoom);
 });
@@ -348,9 +450,22 @@ onUnmounted(() => {
   margin: 20px 0;
   transition: transform 0.5s ease;
 }
+.main-rectangle.is-dragging {
+  transition: none;
+}
 
 .rectangle-container {
   position: absolute;
   transform-style: preserve-3d;
+}
+
+.viewer-container.is-3d-view {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.viewer-container.is-3d-view.is-dragging {
+  cursor: grabbing;
 }
 </style>
