@@ -16,7 +16,18 @@
 <style scoped>
 .cube {
   transform-style: preserve-3d;
-  transform: translateZ(0);
+  transform-origin: center bottom;
+  animation: cube-grow 0.45s ease-out both;
+}
+
+@keyframes cube-grow {
+  from {
+    transform: translateZ(0) scale3d(1, 1, 0.01);
+  }
+
+  to {
+    transform: translateZ(0) scale3d(1, 1, 1);
+  }
 }
 
 .cube-face {

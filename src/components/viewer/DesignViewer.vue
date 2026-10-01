@@ -17,45 +17,30 @@
             <ControlPanel3D v-if="is3DView" v-model="rotations" />
         </div>
 
-        <!-- Design Component -->
-        <div
-          ref="resultContainer" 
-          class="relative viewer-container flex justify-center" 
-          :class="{
-            'is-3d-view': is3DView,
-            'is-dragging': isDragging,
-          }"
-          :style="getResultContainerStyle()"
-          @pointerdown="startDrag"
-          @pointermove="drag"
-          @pointerup="stopDrag"
-          @pointercancel="stopDrag"
-          @lostpointercapture="stopDrag"
-        >
-            <div
-              class="relative main-rectangle"
-              :class="{ 'is-dragging': isDragging }" 
-              :style="getMainRectangleStyle()"
-            >
-                <div
-                    v-for="rect in packedRectangles"
-                    :key="rect.id"
-                    class="absolute rectangle-container"
-                    :style="getBoxContainerStyle(rect)"
-                >
-                    <CubeObject v-if="is3DView" :style="getBoxStyle(rect)" />
-                    <SquareObject v-else :style="{ backgroundColor: getRandomColor(rect.id) }" />
-                </div>
-            </div>
+        <div ref="resultContainer" class="w-full">
+            <DesignCanvas
+              :base-area="baseArea"
+              :packed-rectangles="packedRectangles"
+              :space-zoom="spaceZoom"
+              :is3DView="is3DView"
+              :rotations="rotations"
+              :is-dragging="isDragging"
+              @pointerdown="startDrag"
+              @pointermove="drag"
+              @pointerup="stopDrag"
+              @pointercancel="stopDrag"
+              @lostpointercapture="stopDrag"
+            />
         </div>
     </div>
 </template>
 
 <script setup>
 import { ref, nextTick, onMounted, onUnmounted } from 'vue';
+import DesignCanvas from './DesignCanvas.vue';
 import ControlPanel3D from './ControlPanel3D.vue';
-import SquareObject from './SquareObject.vue';
-import CubeObject from './CubeObject.vue';
+import { packRectangles } from '../../utils/rectanglePacking';
+import { useViewerRotation } from '../../composables/useViewerRotation';
 
 const props = defineProps({
     baseArea: {
@@ -75,10 +60,14 @@ const is3DView = ref(false);
 const spaceZoom = ref(1);
 const resultContainer = ref(null);
 const threeDZoomFactor = 0.65;
-const rotations = ref({
-    rotationX: 80,
-    rotationZ: 0
-});
+
+const {
+  rotations,
+  isDragging,
+  startDrag,
+  drag,
+  stopDrag,
+} = useViewerRotation({ is3DView });
 
 const toggleView = async () => {
   is3DView.value = !is3DView.value;
@@ -88,43 +77,13 @@ const toggleView = async () => {
 }
 
 const startPackingProcess = async () => {
-    const baseWidth = toPositiveFiniteNumber(props.baseArea.width);
-    const baseDepth = toPositiveFiniteNumber(props.baseArea.depth);
-    const baseHeight = toPositiveFiniteNumber(props.baseArea.height) ?? 0;
+    const { packed, unpacked } = packRectangles(
+      props.baseArea,
+      props.userPackages,
+    );
 
-    if (baseWidth === null || baseDepth === null) {
-        packedRectangles.value = [];
-        return;
-    }
-
-    const mainRect = {
-        width: baseWidth,
-        depth: baseDepth,
-        height: baseHeight,
-    };
-
-    const rects = props.userPackages
-        .map((rect) => {
-            const width = toPositiveFiniteNumber(rect.width);
-            const depth = toPositiveFiniteNumber(rect.depth);
-            const height = toPositiveFiniteNumber(rect.height) ?? 20; // Set default height if not specified
-
-            if (width === null || depth === null) {
-                return null;
-            }
-
-            return {
-                id: rect.id,
-                width,
-                depth,
-                height,
-                area: width * depth,
-            };
-        })
-        .filter(Boolean);
-
-    const packed = tryPackingCombination(mainRect, rects);
     packedRectangles.value = packed;
+    unpackedRectangles.value = unpacked;
 
     await nextTick();
     calculateZoom();
@@ -133,137 +92,6 @@ const startPackingProcess = async () => {
 defineExpose({
     startPackingProcess
 });
-
-const toPositiveFiniteNumber = (value) => {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-    return null;
-  }
-
-  return value;
-}
-
-const tryPackingCombination = (mainRect, rects) => {
-  const packed = [];
-  const spaces = [
-    {
-      x: 0,
-      y: 0,
-      width: mainRect.width,
-      depth: mainRect.depth,
-    },
-  ];
-
-  const sortedRects = [...rects].sort((a, b) => b.area - a.area);
-
-  for (const rect of sortedRects) {
-    let bestFit = null;
-    let bestSpace = null;
-
-    const orientations = [
-      { width: rect.width, depth: rect.depth },
-      { width: rect.depth, depth: rect.width },
-    ];
-
-    for (const space of spaces) {
-      for (const orientation of orientations) {
-        const { width, depth } = orientation;
-
-        if (width > space.width || depth > space.depth) {
-          continue;
-        }
-
-        const remainingArea = space.width * space.depth - width * depth;
-        const shortSideResidual = Math.min(
-          space.width - width,
-          space.depth - depth,
-        );
-
-        const candidate = {
-          ...rect,
-          width,
-          depth,
-          x: space.x,
-          y: space.y,
-          remainingArea,
-          shortSideResidual,
-        };
-
-        const isBetterFit =
-          !bestFit ||
-          candidate.remainingArea < bestFit.remainingArea ||
-          (
-            candidate.remainingArea === bestFit.remainingArea &&
-            candidate.shortSideResidual < bestFit.shortSideResidual
-          );
-
-        if (isBetterFit) {
-          bestFit = candidate;
-          bestSpace = space;
-        }
-      }
-    }
-
-    // If we can't pack a rectangle, continue with the others
-    if (!bestFit) {
-        unpackedRectangles.value.push(rect);
-        continue;
-    }
-
-    packed.push(bestFit);
-
-    const newSpaces = [];
-
-    for (const space of spaces) {
-      if (space !== bestSpace) {
-        newSpaces.push(space);
-        continue;
-      }
-
-      if (space.width - bestFit.width > 0) {
-        newSpaces.push({
-          x: space.x + bestFit.width,
-          y: space.y,
-          width: space.width - bestFit.width,
-          depth: bestFit.depth,
-        });
-      }
-
-      if (space.depth - bestFit.depth > 0) {
-        newSpaces.push({
-          x: space.x,
-          y: space.y + bestFit.depth,
-          width: space.width,
-          depth: space.depth - bestFit.depth,
-        });
-      }
-    }
-
-    spaces.length = 0;
-    spaces.push(...newSpaces);
-  }
-
-  return packed;
-};
-
-const getRandomColor = (id) => {
-  const colors = [
-    '#FF6B6B', // Bright red
-    '#4ECDC4', // Light turquoise
-    '#2D91D4', // Vibrant blue
-    '#FFA07A', // Soft salmon
-    '#A5D6A7', // Pastel green
-    '#FFCC00', // Bright yellow
-    '#9C27B0', // Deep purple
-    '#FF8A80', // Bright pink
-    '#3F51B5', // Dark blue
-    '#DCE775', // Light lime green
-  ];
-
-  const hash = [...String(id)]
-    .reduce((value, char) => value + char.charCodeAt(0), 0);
-
-  return colors[hash % colors.length];
-}
 
 const calculateZoom = () => {
   if (!resultContainer.value) {
@@ -279,150 +107,6 @@ const calculateZoom = () => {
     : baseZoom;
 }
 
-const getResultContainerStyle = () => {
-  const height = is3DView ? props.baseArea.height : props.baseArea.depth;
-  const style = {
-    height: `${(height + 75) * spaceZoom.value}px`,
-  };
-
-  return style;
-}
-
-const getMainRectangleStyle = () => {
-  const style = {
-    width: `${props.baseArea.width * spaceZoom.value}px`,
-    height: `${props.baseArea.depth * spaceZoom.value}px`,
-  };
-
-  if (is3DView.value) {
-    style.position = 'absolute'
-    style.bottom = 0
-    style.transform = `perspective(2000px) rotateX(${rotations.value.rotationX}deg) rotateZ(${rotations.value.rotationZ}deg)`
-    style.transformStyle = 'preserve-3d'
-    style.transformOrigin = 'center center'
-  }
-
-  return style;
-}
-
-const getBoxContainerStyle = (rect) => {
-  return {
-    left: `${rect.x * spaceZoom.value}px`,
-    top: `${rect.y * spaceZoom.value}px`,
-    width: `${rect.width * spaceZoom.value}px`,
-    height: `${rect.depth * spaceZoom.value}px`,
-  }
-}
-
-const getBoxStyle = (rect) => {
-  const baseColor = getRandomColor(rect.id)
-
-  return {
-    '--cube-color-front': adjustColor(baseColor, -10),
-    '--cube-color-back': adjustColor(baseColor, -30),
-    '--cube-color-right': adjustColor(baseColor, -20),
-    '--cube-color-left': adjustColor(baseColor, -40),
-    '--cube-color-top': baseColor,
-    '--cube-color-bottom': adjustColor(baseColor, -50),
-    '--cube-width': `${rect.width * spaceZoom.value}px`,
-    '--cube-height': `${rect.depth * spaceZoom.value}px`,
-    '--cube-depth': `${rect.height * spaceZoom.value}px`,
-  }
-}
-
-// Function to adjust color brightness
-const adjustColor = (color, amount) => {
-  const clamp = (val) => Math.min(255, Math.max(0, val));
-
-  // Convert hex to RGB
-  let r = parseInt(color.slice(1, 3), 16);
-  let g = parseInt(color.slice(3, 5), 16);
-  let b = parseInt(color.slice(5, 7), 16);
-
-  // Adjust brightness
-  r = clamp(r + amount);
-  g = clamp(g + amount);
-  b = clamp(b + amount);
-
-  // Convert back to hex
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-}
-
-
-// MOUSE ROTATION ------------------------------------------
-
-const isDragging = ref(false);
-
-const dragStart = ref({
-  x: 0,
-  y: 0,
-  rotationX: 0,
-  rotationZ: 0,
-});
-
-const clamp = (value, min, max) => {
-  return Math.min(max, Math.max(min, value));
-};
-
-const normalizeAngle = (angle) => {
-  return ((angle + 180) % 360 + 360) % 360 - 180;
-};
-
-const startDrag = (event) => {
-  if (!is3DView.value || !event.isPrimary) {
-    return;
-  }
-
-  // It only accepts the left mouse button
-  if (event.pointerType === 'mouse' && event.button !== 0) {
-    return;
-  }
-
-  isDragging.value = true;
-
-  dragStart.value = {
-    x: event.clientX,
-    y: event.clientY,
-    rotationX: rotations.value.rotationX,
-    rotationZ: rotations.value.rotationZ,
-  };
-
-  event.currentTarget.setPointerCapture(event.pointerId);
-};
-
-const drag = (event) => {
-  if (!isDragging.value || !event.isPrimary) {
-    return;
-  }
-
-  const deltaX = event.clientX - dragStart.value.x;
-  const deltaY = event.clientY - dragStart.value.y;
-
-  rotations.value.rotationZ = normalizeAngle(
-    dragStart.value.rotationZ + deltaX * 0.4,
-  );
-
-  rotations.value.rotationX = clamp(
-    dragStart.value.rotationX - deltaY * 0.3,
-    20,
-    85,
-  );
-};
-
-const stopDrag = (event) => {
-  if (!isDragging.value) {
-    return;
-  }
-
-  isDragging.value = false;
-
-  if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-    event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-};
-
-// ---------------------------------------------------------
-
 onMounted(() => {
   window.addEventListener('resize', calculateZoom);
 });
@@ -431,41 +115,3 @@ onUnmounted(() => {
   window.removeEventListener('resize', calculateZoom);
 });
 </script>
-
-<style scoped>
-.main-rectangle {
-  background-image: linear-gradient(
-    45deg,
-    #eee 25%,
-    transparent 25%,
-    transparent 50%,
-    #eee 50%,
-    #eee 75%,
-    transparent 75%,
-    #fff
-  );
-  background-size: 30px 30px;
-  position: relative;
-  border: 1px solid #ccc;
-  margin: 20px 0;
-  transition: transform 0.5s ease;
-}
-.main-rectangle.is-dragging {
-  transition: none;
-}
-
-.rectangle-container {
-  position: absolute;
-  transform-style: preserve-3d;
-}
-
-.viewer-container.is-3d-view {
-  cursor: grab;
-  touch-action: none;
-  user-select: none;
-}
-
-.viewer-container.is-3d-view.is-dragging {
-  cursor: grabbing;
-}
-</style>
