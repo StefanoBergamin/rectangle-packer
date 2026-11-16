@@ -49,3 +49,10 @@ git add -f dist
 git commit -m "Add dist for deploy"
 git subtree push --prefix dist origin gh-pages
 ```
+or
+```sh
+git checkout main
+git pull origin main
+npm run build
+npx gh-pages -d dist
+```
